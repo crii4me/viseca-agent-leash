@@ -1,14 +1,56 @@
+# ---------------------------------------------------------------------------
+# Secrets. Nothing below this line should ever reach a commit.
+# The Viseca team key and any ANTHROPIC_API_KEY live in .env ONLY.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.json
+credentials.json
+
+# --- Python ----------------------------------------------------------------
 .venv/
 venv/
+ENV/
 __pycache__/
 *.py[cod]
+*$py.class
 *.egg-info/
+.eggs/
 build/
 dist/
 .pytest_cache/
-.env
-.env.local
-*.log
-.DS_Store
-.idea/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# --- Node / frontend (demo-harness) ----------------------------------------
+node_modules/
+.next/
+.nuxt/
+.svelte-kit/
+.vite/
+dist-ssr/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Editors / OS ----------------------------------------------------------
 .vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Local scratch ---------------------------------------------------------
+*.log
+.claude/
+scratch/
+tmp/
