@@ -1,0 +1,141 @@
+{
+  "$defs": {
+    "HardRule": {
+      "additionalProperties": false,
+      "description": "A single mechanically-checkable constraint.\n\nOnly clauses that reduce to a clean, comparable check belong here. If you\nfind yourself wanting a `maybe` or a `roughly`, it is guidance.",
+      "properties": {
+        "field": {
+          "description": "Dotted field path; must be in the known vocabulary.",
+          "title": "Field",
+          "type": "string"
+        },
+        "operator": {
+          "$ref": "#/$defs/Operator"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Value"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 4217 code that `value` is denominated in. Required for money fields.",
+          "title": "Currency"
+        },
+        "scope": {
+          "$ref": "#/$defs/Scope",
+          "default": "purchase"
+        },
+        "period_days": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Trailing window in days. Required when scope=period, forbidden otherwise.",
+          "title": "Period Days"
+        }
+      },
+      "required": [
+        "field",
+        "operator",
+        "value"
+      ],
+      "title": "HardRule",
+      "type": "object"
+    },
+    "Operator": {
+      "description": "Comparison operators a hard rule may use.",
+      "enum": [
+        "<=",
+        "<",
+        ">=",
+        ">",
+        "==",
+        "!=",
+        "in",
+        "not_in"
+      ],
+      "title": "Operator",
+      "type": "string"
+    },
+    "Scope": {
+      "description": "Whether a rule is checked against one purchase or a rolling window.",
+      "enum": [
+        "purchase",
+        "period"
+      ],
+      "title": "Scope",
+      "type": "string"
+    },
+    "UncertaintyPolicy": {
+      "description": "What Function 2 does when nothing else resolves a case.",
+      "enum": [
+        "ask",
+        "decline",
+        "approve"
+      ],
+      "title": "UncertaintyPolicy",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Output contract of Function 1 (mandate compiler), input contract of Function 2 (decision engine). NOTE: a hard_rule's `value` is denominated in its `currency`, which is not necessarily CHF - convert via fx_rates before comparing, and fail closed if conversion is impossible.",
+  "properties": {
+    "hard_rules": {
+      "items": {
+        "$ref": "#/$defs/HardRule"
+      },
+      "title": "Hard Rules",
+      "type": "array"
+    },
+    "uncertainty_policy": {
+      "$ref": "#/$defs/UncertaintyPolicy",
+      "default": "ask"
+    },
+    "guidance": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Guidance",
+      "type": "array"
+    },
+    "open_questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Open Questions",
+      "type": "array"
+    }
+  },
+  "title": "VisecaMandate",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

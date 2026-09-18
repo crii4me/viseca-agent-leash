@@ -1,0 +1,77 @@
+[
+  {
+    "id": "worked_example",
+    "why": "The reference case from Viseca's docs. Locks in the expected 4-way split.",
+    "instruction": "Buy one ordinary grocery item for CHF 20 or less from a shop I use regularly. Ask me when uncertain.",
+    "expect": {
+      "uncertainty_policy": "ask",
+      "hard_rule_fields": ["authorization.billing_amount_chf"],
+      "min_guidance": 2,
+      "min_open_questions": 1
+    }
+  },
+  {
+    "id": "eur_office_supplies",
+    "why": "Non-CHF currency. The rule must keep EUR and flag that Function 2 has to fx-convert before comparing.",
+    "instruction": "Spend up to EUR 45 on office supplies. Decline if you're not sure.",
+    "expect": {
+      "uncertainty_policy": "decline",
+      "hard_rule_fields": ["authorization.billing_amount_chf"],
+      "currencies": ["EUR"],
+      "min_open_questions": 0
+    }
+  },
+  {
+    "id": "weekly_lunch_cap",
+    "why": "Frequency constraint plus a per-purchase cap. Two rules of different scope from one sentence.",
+    "instruction": "Order lunch no more than 3 times a week, under CHF 25 each time. Ask me if unsure.",
+    "expect": {
+      "uncertainty_policy": "ask",
+      "hard_rule_fields": [
+        "rolling.purchase_count",
+        "authorization.billing_amount_chf"
+      ],
+      "min_open_questions": 0
+    }
+  },
+  {
+    "id": "monthly_grocery_budget",
+    "why": "Negated comparator ('don't spend more than') and an approximate window. 'a month' -> rolling 30d should be questioned, not assumed silently.",
+    "instruction": "Don't spend more than CHF 200 a month on groceries.",
+    "expect": {
+      "uncertainty_policy": "ask",
+      "hard_rule_fields": ["rolling.billing_amount_chf"],
+      "min_open_questions": 2
+    }
+  },
+  {
+    "id": "vague_only",
+    "why": "Genuinely ambiguous, no resolvable value anywhere. Must produce ZERO hard rules and ask instead of guessing.",
+    "instruction": "Buy whatever seems reasonable for the office kitchen.",
+    "expect": {
+      "uncertainty_policy": "ask",
+      "hard_rule_fields": [],
+      "min_open_questions": 2
+    }
+  },
+  {
+    "id": "missing_currency",
+    "why": "A number and a comparator but no currency. Must NOT default to CHF - that would silently change what was authorised.",
+    "instruction": "Keep each purchase to 30 or less, and ask me when uncertain.",
+    "expect": {
+      "uncertainty_policy": "ask",
+      "hard_rule_fields": [],
+      "min_open_questions": 1
+    }
+  },
+  {
+    "id": "unevaluable_constraint",
+    "why": "Reads like a hard rule ('at least 4 stars') but names nothing the payment event reports. Must not become an enforced rule.",
+    "instruction": "Only buy from shops with at least 4 stars and a trusted returns policy. Approve anything small yourself.",
+    "expect": {
+      "uncertainty_policy": "approve",
+      "hard_rule_fields": [],
+      "min_open_questions": 1
+    }
+  }
+]
