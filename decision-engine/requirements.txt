@@ -1,0 +1,5 @@
+# mandate-compiler is not published to PyPI -- install it from its sibling
+# folder in this monorepo first (editable, so `models.FIELDS` changes there
+# are picked up here without reinstalling).
+-e ../mandate-compiler
+pytest>=8
