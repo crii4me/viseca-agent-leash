@@ -33,6 +33,16 @@ class VisecaMandate(BaseModel):
     uncertainty_policy: UncertaintyPolicy = UncertaintyPolicy.ASK
     guidance: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+    blocking_open_questions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Subset of open_questions that must be answered before a purchase can "
+            "be evaluated (e.g. an amount limit with no stated currency). "
+            "Questions NOT in this list attach as evidence and must not on their "
+            "own force a step_up. Additive: a consumer that ignores this field "
+            "behaves exactly as before."
+        ),
+    )
 
 
 def mandate_json_schema() -> dict:

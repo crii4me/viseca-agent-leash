@@ -150,21 +150,30 @@ def main() -> None:
     ap.add_argument("--data-dir", default=str(_HERE / "sample-data"),
                     help="Path to the data pack (viseca-2026/data). Defaults to the bundled sample-data/.")
     ap.add_argument("--json", action="store_true", help="Emit machine-readable JSON instead of a table.")
+    # Risk composition is ON by default. It used to be opt-in via --risk, which
+    # meant a plain `python replay.py` silently ran only half of Function 2:
+    # the duplicate-order and lookalike-seller cases in SCEN0004 both sailed
+    # through, and the output looked like a finished, working system. The
+    # partial engine is still reachable, but you now have to ask for it by name.
+    ap.add_argument("--no-risk", action="store_true",
+                    help="Run ONLY the hard-rules engine, skipping risk composition. "
+                         "For diffing the two layers; not the real engine.")
     ap.add_argument("--risk", action="store_true",
-                    help="Run the FULL Function 2 (hard rules + risk composition). "
-                         "Without it, only the hard-rules engine runs, so you can diff the two.")
+                    help=argparse.SUPPRESS)  # accepted for backwards compatibility; now the default
     args = ap.parse_args()
+
+    use_risk = not args.no_risk
 
     data_dir = Path(args.data_dir)
     pack = DataPack(data_dir)
     fx_rates = load_fx_rates(data_dir)
-    familiar_by_card = load_familiar_by_card(data_dir) if args.risk else {}
+    familiar_by_card = load_familiar_by_card(data_dir) if use_risk else {}
 
     scenario_ids = [args.scenario] if args.scenario else sorted(pack.scenario_catalogue)
 
     all_rows: dict[str, list[dict]] = {}
     for scen in scenario_ids:
-        all_rows[scen] = replay_scenario(pack, scen, fx_rates, use_risk=args.risk,
+        all_rows[scen] = replay_scenario(pack, scen, fx_rates, use_risk=use_risk,
                                          familiar_by_card=familiar_by_card)
 
     if args.json:
@@ -173,6 +182,10 @@ def main() -> None:
 
     for scen in scenario_ids:
         _print_table(scen, pack, all_rows[scen])
+
+    if not use_risk:
+        print("\n!! --no-risk: hard rules ONLY. Duplicate orders, lookalike sellers "
+              "and order-term mismatches are NOT checked in this mode.")
 
     total = sum(len(r) for r in all_rows.values())
     counts: dict[str, int] = {}

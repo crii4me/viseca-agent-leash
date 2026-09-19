@@ -279,11 +279,21 @@ def gather_signals(
     if requirements.expected_categories:
         signals.append(check_merchant_legitimacy(rs_auth, expected_categories=requirements.expected_categories))
     if requirements.require_returnable or requirements.require_cancellable or requirements.min_return_days is not None:
+        # min_return_days is deliberately NOT passed here. order_returnable is a
+        # boolean and structurally cannot express a duration, so risk_signals
+        # returns `fulfillment_unverifiable` for EVERY purchase once it is
+        # supplied -- including ones whose order_returnable is plainly "true".
+        # That escalated 9 of SCEN0002's 12 rows to step_up on a question the
+        # boolean does answer. Grade the boolean here, honestly: false ->
+        # mismatch, unknown -> unverifiable, true -> satisfied. The day count is
+        # a separate, lower-confidence question and travels as evidence below.
         signals.append(check_fulfillment_terms(
             rs_auth,
-            require_returnable=requirements.require_returnable,
+            require_returnable=(
+                requirements.require_returnable
+                or requirements.min_return_days is not None
+            ),
             require_cancellable=requirements.require_cancellable,
-            min_return_days=requirements.min_return_days,
         ))
         if requirements.min_return_days is not None:
             signals.append(extract_return_window_days(rs_auth))  # low tier evidence
@@ -310,8 +320,20 @@ def _classify(flag: str, requirements: MandateRequirements) -> str:
         return "decline" if requirements.require_known_seller else "step_up"
     if flag == "unfamiliar_merchant":
         return "step_up" if requirements.require_known_seller else "evidence"
+    if flag == "fulfillment_mismatch":
+        # order_returnable == "false" is a DEFINITE contradiction of a term the
+        # customer stated, not an ambiguity. risk_signals grades it 0.95,
+        # "directly contradicts the mandate", and its own suggested handling is
+        # decline. Lumping it in with `fulfillment_unverifiable` below meant a
+        # shop saying outright "this cannot be returned" was treated the same as
+        # a shop that simply didn't say -- so AU0014 asked the customer instead
+        # of declining. Context-gated like lookalike_merchant: only a decline
+        # when the customer actually required the term.
+        if requirements.require_returnable or requirements.require_cancellable:
+            return "decline"
+        return "step_up"
     if flag in ("likely_duplicate", "attempt_burst", "merchant_channel_mismatch",
-                "fulfillment_mismatch", "fulfillment_unverifiable", "fulfillment_not_applicable"):
+                "fulfillment_unverifiable", "fulfillment_not_applicable"):
         return "step_up"
     if flag == "likely_retry":
         return "ignore"  # a retry of a declined order is normal; never block

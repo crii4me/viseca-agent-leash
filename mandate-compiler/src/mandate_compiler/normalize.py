@@ -21,7 +21,10 @@ _SPLIT = re.compile(
 # Leading imperatives to strip when turning a span into readable guidance.
 # `\b\s*` rather than `\s+` so a bare trailing verb ("Only buy", left behind when
 # a rule was lifted out) reduces to nothing and gets dropped as noise.
-_LEAD_ONLY = re.compile(r"^(?:only|just)\s+", flags=re.IGNORECASE)
+# `\b\s*` rather than `\s+`: "Buy only" leaves a bare "only" once the verb is
+# stripped, and a trailing-whitespace requirement would let it through as
+# guidance reading simply "Only".
+_LEAD_ONLY = re.compile(r"^(?:only|just)\b\s*", flags=re.IGNORECASE)
 _LEAD_VERBS = re.compile(
     r"^(?:please\s+)?(?:you\s+(?:may|can|should)\s+)?"
     r"(?:only\s+|just\s+)?(?:buy|purchase|order|get|spend|pay|use|shop|book)\b\s*",
@@ -37,6 +40,28 @@ _FILLER = {
 }
 
 _TRAILING_PREP = re.compile(r"\s+(?:for|from|at|of|on|in|with|to|by)\s*$", flags=re.IGNORECASE)
+
+# Connectives left pointing at nothing once a matched span is cut out of the
+# middle of a sentence - "keep the total across |any seven days at or below CHF
+# 300|" leaves a trailing "across". Stripped repeatedly, because removing one
+# can expose another ("... at or" -> "... at" -> "").
+_TRAILING_DANGLE = re.compile(
+    r"\s*\b(?:across|over|within|during|under|up|than|at|or|and|but|of|to|for|"
+    r"from|in|on|with|by|is|are|be)\s*$",
+    flags=re.IGNORECASE,
+)
+
+# Sentence scaffolding that carries no instruction of its own. A residual made
+# ENTIRELY of these words says nothing the compiled rule does not already say,
+# so it is dropped rather than shown to the customer as guidance.
+_SCAFFOLD_WORDS = {
+    "keep", "kept", "each", "every", "the", "a", "an", "any", "all",
+    "total", "totals", "order", "orders", "purchase", "purchases",
+    "spend", "spending", "spent", "pay", "paying", "cost", "costs",
+    "at", "or", "and", "but", "of", "to", "for", "in", "on", "with", "by",
+    "up", "than", "across", "over", "within", "during", "under", "per",
+    "is", "are", "be", "it", "them", "that", "this", "no", "not",
+}
 _LEADING_PREP = re.compile(r"^(?:for|from|at|of|on|in|with|to|by)\s+", flags=re.IGNORECASE)
 _WS = re.compile(r"\s+")
 
@@ -75,6 +100,15 @@ def as_guidance(text: str) -> str:
     t = _LEAD_ONLY.sub("", t)
     t = _LEADING_PREP.sub("", t)
     t = _TRAILING_PREP.sub("", t)
+
+    # Strip dangling connectives until none are left; removing one can expose
+    # the next.
+    while True:
+        stripped = _TRAILING_DANGLE.sub("", t)
+        if stripped == t:
+            break
+        t = stripped
+
     t = tidy(t)
     if not t:
         return ""
@@ -82,8 +116,18 @@ def as_guidance(text: str) -> str:
 
 
 def is_filler(text: str) -> bool:
-    """True if a residual fragment is pure connective tissue, not guidance."""
-    return tidy(text).casefold() in _FILLER
+    """True if a residual fragment is pure connective tissue, not guidance.
+
+    Two ways to qualify: an exact match against a known filler phrase, or being
+    made up entirely of sentence scaffolding. The second catches leftovers like
+    "Keep the total", which reads like guidance but only restates the rule that
+    was just extracted from the same clause.
+    """
+    cleaned = tidy(text).casefold()
+    if cleaned in _FILLER:
+        return True
+    words = re.findall(r"[a-z0-9']+", cleaned)
+    return bool(words) and all(w in _SCAFFOLD_WORDS for w in words)
 
 
 def remove_span(text: str, start: int, end: int) -> str:

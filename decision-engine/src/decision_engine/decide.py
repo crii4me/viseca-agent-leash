@@ -25,12 +25,18 @@ DECISION LADDER (top wins; first match returns):
        absent rate is a config bug and also surfaces here as step_up, never a
        silent decline.
 
-  3. all rules SATISFIED (or none), open_questions present
+  3. all rules SATISFIED (or none), BLOCKING open_questions present
                                   -> uncertainty_policy
        ask -> step_up, decline -> decline, approve -> approve. The contract's
        intended role for uncertainty_policy: what to do when nothing else
-       resolves the case, and an unanswered open_question means the case is
-       not fully resolved. NOTE: open_questions are STRIPPED from live events
+       resolves the case. Only questions listed in `blocking_open_questions`
+       count here -- ones that stop a purchase being evaluated at all, such as
+       an amount limit with no stated currency. A non-blocking question (what
+       "a shop I use regularly" means) rides along as evidence on the approval
+       instead, so the frictionless case stays frictionless. When the mandate
+       carries no `blocking_open_questions` key at all, every open_question is
+       treated as blocking -- the behaviour this rung had before.
+       NOTE: open_questions are STRIPPED from live events
        (they're explanatory text, present only on GET /v1/mandates/{id}); the
        api_client injects them back into the event's mandate before calling
        this function, so this branch can fire live. Offline they're already
@@ -153,20 +159,44 @@ def _decide_inner(
 
     # Rungs 3 & 4: every rule passed (or there were none).
     open_questions = mandate.get("open_questions") or []
-    if open_questions:
+
+    # Only a BLOCKING open question forces uncertainty_policy. A blocking
+    # question stops a purchase being evaluated at all (e.g. an amount limit
+    # with no stated currency); a non-blocking one is context the stated limits
+    # do not depend on, such as what "a shop I use regularly" means. Without
+    # this split, SCEN0000 - one grocery item, CHF 20, CHF 20 limit - returns
+    # step_up purely because "regularly" is undefined, even though the purchase
+    # passes the only rule the customer actually stated.
+    #
+    # Backward compatible: when `blocking_open_questions` is absent (older
+    # mandates, and live events from before the compiler ships this), every open
+    # question counts as blocking - exactly the previous behaviour.
+    blocking = mandate.get("blocking_open_questions")
+    if blocking is None:
+        blocking = open_questions
+
+    if blocking:
         policy = mandate.get("uncertainty_policy", "ask")
         decision = _POLICY_TO_DECISION.get(policy, "step_up")
         return Decision(
             authorization_id, decision, [f"uncertainty_policy:{policy}"],
             _uncertainty_message(decision),
-            [f"all hard rules satisfied, but {len(open_questions)} open question(s) remain"]
-            + [f"open question: {q}" for q in open_questions],
+            [f"all hard rules satisfied, but {len(blocking)} blocking open question(s) remain"]
+            + [f"open question: {q}" for q in blocking],
         )
+
+    evidence = [r.detail for r in result.rule_results] or [
+        "no hard rules on this mandate; nothing to violate"
+    ]
+    # Non-blocking questions still ride along with the approval as context, so
+    # the customer can see what the system could not verify even though it
+    # approved - the transparency half of "the customer retained control".
+    evidence += [f"noted, not blocking: {q}" for q in open_questions]
 
     return Decision(
         authorization_id, "approve", ["within_policy"],
         "Approved: this purchase is within the limits you set.",
-        [r.detail for r in result.rule_results] or ["no hard rules on this mandate; nothing to violate"],
+        evidence,
     )
 
 

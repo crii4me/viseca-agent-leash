@@ -133,6 +133,14 @@
       },
       "title": "Open Questions",
       "type": "array"
+    },
+    "blocking_open_questions": {
+      "description": "Subset of open_questions that must be answered before a purchase can be evaluated (e.g. an amount limit with no stated currency). Questions NOT in this list attach as evidence and must not on their own force a step_up. Additive: a consumer that ignores this field behaves exactly as before.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Blocking Open Questions",
+      "type": "array"
     }
   },
   "title": "VisecaMandate",

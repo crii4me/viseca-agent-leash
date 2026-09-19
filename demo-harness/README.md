@@ -9,13 +9,30 @@ and see every decision with its reason.
 
 ```bash
 cd demo-harness
-pip install -e ../mandate-compiler -e ../decision-engine
+pip install -r ../decision-engine/requirements.txt -e ../decision-engine
 pip install pytest requests
-python replay.py                       # all 5 scenarios, bundled sample-data/
+python replay.py                       # all 5 scenarios, FULL engine, bundled sample-data/
 python replay.py --scenario SCEN0002   # one scenario
 python replay.py --json                # machine-readable, for a UI
 python replay.py --data-dir /path/to/viseca-2026/data   # a full data pack
+python replay.py --no-risk             # hard rules ONLY -- for diffing the layers
 ```
+
+**The full engine is the default.** Risk composition used to be opt-in behind
+`--risk`, so a plain `python replay.py` quietly ran only the hard-rules half:
+SCEN0004's duplicate order and lookalike seller both slipped through, and the
+output looked like a finished system. `--risk` is still accepted and does
+nothing; `--no-risk` is the explicit opt-out and prints a warning.
+
+Expected totals over the full 45-purchase pack (`--data-dir` at the real pack):
+
+| Mode | approve / decline / step_up |
+|---|---|
+| default (full engine) | **24 / 12 / 9** |
+| `--no-risk` | 36 / 9 / 0 ← half the engine |
+
+Twelve of those approvals flip to decline or step_up once risk composition runs.
+If you see 36/9/0, you are looking at the partial engine.
 
 ## What it does, per purchase
 

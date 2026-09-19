@@ -75,6 +75,12 @@ _INCLUSIVE = {
     "no more than", "not more than", "at most", "up to", "maximum of", "maximum",
     "max of", "max", "no higher than", "no greater than", "or less", "or under",
     "or below", "or cheaper", "or fewer",
+    # "at or below CHF 120" must NOT be read as the bare "below CHF 120": the
+    # "at or" makes the limit inclusive, and dropping it declines a purchase
+    # priced exactly at the stated limit. These are listed explicitly because
+    # _CMP_BEFORE is length-sorted, so the compound phrase is tried before the
+    # bare comparator it contains.
+    "at or below", "at or under", "at or less than",
 }
 
 _NUM = r"\d{1,9}(?:['’]\d{3})*(?:[.,]\d{1,2})?"
@@ -111,10 +117,24 @@ _RE_BARE_AMOUNT = re.compile(
 )
 
 _PERIOD_ALT = "|".join(sorted(_PERIOD_DAYS, key=len, reverse=True))
-# "a week", "per month", "every 3 days", "weekly"
+# "a week", "per month", "every 3 days", "any seven days", "weekly".
+# `any` is in the determiner list and the count accepts number words so that
+# "across any seven days" is recognised; without both, a rolling window stated
+# in words compiles to a per-purchase cap and is never enforced.
 _RE_PERIOD = re.compile(
-    rf"\b(?:(?:a|an|per|each|every)\s+(?:(?P<n>\d+)\s+)?(?P<unit>{_PERIOD_ALT})"
+    rf"\b(?:(?:a|an|any|per|each|every)\s+(?:(?P<n>\d+|{_NUM_WORD_ALT})\s+)?"
+    rf"(?P<unit>{_PERIOD_ALT})"
     rf"|(?P<bare>daily|weekly|fortnightly|monthly|yearly|annually))\b",
+    re.IGNORECASE,
+)
+
+# Words that mark an amount as a SUM over a window rather than a per-purchase
+# price. Only when one of these is present will a window stated *before* the
+# amount be treated as a rolling cap - otherwise "buy lunch every day for up to
+# CHF 25" would wrongly become CHF 25 of lunch per day instead of per lunch.
+_RE_AGGREGATE = re.compile(
+    r"\b(?:total|totals|totalling|altogether|combined|cumulative|"
+    r"in all|all together|sum|across)\b",
     re.IGNORECASE,
 )
 
@@ -262,6 +282,68 @@ _RE_TIER_A = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Conditions the customer plainly expects ENFORCED, for which no field exists.
+#
+# These are not descriptions of the kind of thing to buy ("an ordinary grocery
+# item") - they are gates: "only if the order can be returned", "from shops I
+# have used before". Filing them as silent guidance is the worst outcome: the
+# customer stated a condition, and the system neither enforces it nor admits it
+# cannot. They become open_questions instead - NON-blocking, because Function 2
+# does enforce most of them through its risk layer, so the question is about
+# precision, not about whether a purchase can be judged at all.
+# ---------------------------------------------------------------------------
+_ENFORCEABLE_INTENT = re.compile(
+    r"\b(?:only\s+(?:if|from|at|when|with|where)|must\s+(?:be|have|not)|"
+    r"has\s+to\s+be|needs?\s+to\s+be|provided\s+that|as\s+long\s+as|"
+    r"so\s+long\s+as|pause\s+anything|block\s+anything|flag\s+anything|"
+    r"stop\s+anything)\b",
+    re.IGNORECASE,
+)
+
+# (topic pattern, the specific question to ask). A specific, answerable question
+# beats a generic "we could not enforce this" every time.
+_UNENFORCEABLE_TOPICS: list[tuple[re.Pattern, str]] = [
+    (
+        re.compile(r"\breturn(?:ed|able|s|ing)?\b", re.IGNORECASE),
+        "You made returnability a condition. The payment event reports only "
+        "whether an order is returnable at all (true / false / unknown) - no "
+        "field carries the return window in days. Is 'returnable at all' close "
+        "enough, or should an order with no confirmed window be refused?",
+    ),
+    (
+        re.compile(
+            r"\b(?:used\s+before|bought\s+from\s+before|shopped\s+(?:at|with)\s+"
+            r"before|used\s+previously|previously\s+used|been\s+to\s+before)\b",
+            re.IGNORECASE,
+        ),
+        "You limited this to shops you have used before. How should that be "
+        "decided - any single previous purchase at the same shop, or a minimum "
+        "number of them, and over what period?",
+    ),
+    (
+        re.compile(
+            r"\b(?:someone\s+other\s+than\s+me|somebody\s+else|not\s+me|"
+            r"driving\s+the\s+session|session)\b",
+            re.IGNORECASE,
+        ),
+        "You asked to pause anything that looks like someone else is driving "
+        "the session. The event carries a device id and a count of recent "
+        "attempts - which of those should count as suspicious, and at what "
+        "threshold?",
+    ),
+    (
+        re.compile(
+            r"\b(?:specialist|specialty)\b.*?\b(?:retailer|shop|store|seller)\b"
+            r"|\bkind\s+of\s+(?:shop|store|retailer|seller)\b",
+            re.IGNORECASE,
+        ),
+        "You restricted this to a type of retailer. Merchants carry only a "
+        "broad category label (groceries, sporting_goods, electronics, ...) - "
+        "which categories should count as acceptable here?",
+    ),
+]
+
 
 # ---------------------------------------------------------------------------
 # Parsing helpers
@@ -308,7 +390,11 @@ def _find_period(text: str) -> tuple[int, str, tuple[int, int]] | None:
         unit = bare.lower()
         return _PERIOD_DAYS[unit], unit, m.span()
     unit = m.group("unit").lower()
-    mult = int(m.group("n")) if m.group("n") else 1
+    # The count may be a digit ("every 3 days") or a word ("any seven days").
+    raw_n = m.group("n")
+    mult = _parse_count(raw_n) if raw_n else 1
+    if not mult or mult < 1:
+        mult = 1
     return _PERIOD_DAYS[unit] * mult, unit, m.span()
 
 
@@ -485,16 +571,30 @@ class DeterministicBackend:
                     return self._unknown_currency(clause, m, out)
 
                 op = forced if forced is not None else _operator_for(m.group("cmp"))
-                period = _find_period(clause[m.end():m.end() + 24])
                 text = tidy(m.group(0))
                 span = m.span()
+                period_days = unit = None
 
+                # A window stated AFTER the amount: "CHF 200 a month".
+                period = _find_period(clause[m.end():m.end() + 24])
                 if period:
                     period_days, unit, pspan = period
-                    field, scope, pd = "rolling.billing_amount_chf", Scope.PERIOD, period_days
                     # Consume the period phrase too, so it does not survive into
                     # the residual as a stray "a month".
                     span = (m.start(), m.end() + pspan[1])
+                elif _RE_AGGREGATE.search(clause):
+                    # A window stated BEFORE the amount: "keep the total across
+                    # any seven days at or below CHF 300". Only consulted when the
+                    # clause marks the amount as an aggregate, so a per-purchase
+                    # price that merely sits near a frequency ("buy lunch every
+                    # day for up to CHF 25") is not turned into a rolling cap.
+                    before = _find_period(clause[: m.start()])
+                    if before:
+                        period_days, unit, pspan = before
+                        span = (pspan[0], m.end())
+
+                if period_days is not None:
+                    field, scope, pd = "rolling.billing_amount_chf", Scope.PERIOD, period_days
                     text = tidy(clause[span[0]:span[1]])
                     why = (
                         f"Explicit amount and currency, attached to a window "
@@ -576,6 +676,10 @@ class DeterministicBackend:
                     f"currency will be converted at the day's rate.)"
                 ),
                 confidence=0.9,
+                # Blocking: without a currency the amount limit cannot be
+                # compared against anything, so no purchase can be evaluated
+                # against it. This one genuinely must be answered first.
+                blocking=True,
             )
         )
         out.clauses.append(
@@ -626,6 +730,52 @@ class DeterministicBackend:
                         confidence=0.85,
                     )
                 )
+            return
+
+        # A stated CONDITION with no field behind it. Not a description of what
+        # to buy - a gate the customer expects applied. Say so instead of
+        # filing it silently as guidance.
+        topic_question = next(
+            (q for pat, q in _UNENFORCEABLE_TOPICS if pat.search(residual)), None
+        )
+        if topic_question or _ENFORCEABLE_INTENT.search(residual):
+            question = topic_question or (
+                f"You asked for: \"{text}\". Nothing the payment system reports "
+                f"settles this, so it cannot be enforced as a hard rule. Should "
+                f"it block a purchase outright, or is it context for judgment?"
+            )
+            out.clauses.append(
+                Clause(
+                    text=tidy(residual),
+                    bucket=Bucket.GUIDANCE,
+                    reason=(
+                        "States a condition the customer expects enforced, but no "
+                        "field on the event settles it. Kept as guidance so it can "
+                        "still inform judgment."
+                    ),
+                    guidance=text,
+                    confidence=0.8,
+                )
+            )
+            out.clauses.append(
+                Clause(
+                    text=tidy(residual),
+                    bucket=Bucket.OPEN_QUESTION,
+                    reason=(
+                        "A stated condition with no matching field. Filing it as "
+                        "silent guidance would neither enforce it nor admit that "
+                        "it cannot be enforced."
+                    ),
+                    question=question,
+                    confidence=0.8,
+                    # Non-blocking: Function 2's risk layer enforces most of
+                    # these through derived requirements, so the question is
+                    # about precision, not about whether the purchase can be
+                    # judged at all. Blocking here would re-create the step_up
+                    # parade that Bug 5 and Question 1 just removed.
+                    blocking=False,
+                )
+            )
             return
 
         reason = (
