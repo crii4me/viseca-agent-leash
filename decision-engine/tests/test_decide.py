@@ -67,28 +67,59 @@ class TestStepUpOnUnresolvable:
 
 
 class TestUncertaintyPolicyFallback:
-    def test_all_pass_with_open_questions_uses_ask_policy(self):
-        """Worked example: under the cap, but 'regularly' is an open question
-        and uncertainty_policy is 'ask' -> step_up."""
+    # CHANGED BY THE BUG-5 FIX -- NEEDS OMAR'S REVIEW.
+    # Rung 3 now fires only on BLOCKING open questions. The first test below
+    # previously asserted step_up for the worked example and was the Bug 5
+    # repro itself: 'a shop I use regularly' is unanswerable but does not stop
+    # the CHF 20 cap being checked, so it must no longer force a step_up.
+    # Coverage of the policy ladder is preserved by the two tests after it,
+    # which use a genuinely blocking question instead.
+
+    def test_non_blocking_open_question_does_not_trigger_the_policy(self):
+        """Bug 5: worked example, under the cap. 'regularly' is open but not
+        blocking, so this approves instead of asking."""
         mandate = _mandate_dict("Buy one ordinary grocery item for CHF 20 or less from a shop I use regularly. Ask me when uncertain.")
-        assert mandate["open_questions"]  # sanity: it does have an open question
+        assert mandate["open_questions"]  # it does still carry the question
+        assert mandate["blocking_open_questions"] == []  # but none of them block
         assert mandate["uncertainty_policy"] == "ask"
+        event = _event(mandate, billing_amount_chf=15.0)
+        d = decide(event, ledger=Ledger())
+        assert d.decision == "approve"
+        assert d.reason_codes == ["within_policy"]
+        # The question still travels with the approval as context.
+        assert any("not blocking" in e for e in d.evidence)
+
+    def test_blocking_open_question_uses_ask_policy(self):
+        """A question that DOES stop evaluation still defers to the policy."""
+        mandate = _mandate_dict("Buy one ordinary grocery item for CHF 20 or less from a shop I use regularly. Ask me when uncertain.")
+        mandate["blocking_open_questions"] = ["Which currency is the limit in?"]
         event = _event(mandate, billing_amount_chf=15.0)
         d = decide(event, ledger=Ledger())
         assert d.decision == "step_up"
         assert d.reason_codes == ["uncertainty_policy:ask"]
 
-    def test_decline_policy_with_open_questions_declines(self):
+    def test_decline_policy_with_blocking_open_questions_declines(self):
         mandate = _mandate_dict(
             "Buy one ordinary grocery item for CHF 20 or less from a shop I use regularly. Decline when uncertain.",
         )
-        # force the decline policy + keep the open question
+        # force the decline policy + a question that genuinely blocks
         mandate["uncertainty_policy"] = "decline"
-        assert mandate["open_questions"]
+        mandate["blocking_open_questions"] = ["Which currency is the limit in?"]
         event = _event(mandate, billing_amount_chf=15.0)
         d = decide(event, ledger=Ledger())
         assert d.decision == "decline"
         assert d.reason_codes == ["uncertainty_policy:decline"]
+
+    def test_legacy_mandate_without_the_key_treats_all_questions_as_blocking(self):
+        """Backward compatibility: a live event predating this field behaves
+        exactly as before -- any open question defers to the policy."""
+        mandate = _mandate_dict("Buy one ordinary grocery item for CHF 20 or less from a shop I use regularly. Ask me when uncertain.")
+        mandate.pop("blocking_open_questions")
+        assert mandate["open_questions"]
+        event = _event(mandate, billing_amount_chf=15.0)
+        d = decide(event, ledger=Ledger())
+        assert d.decision == "step_up"
+        assert d.reason_codes == ["uncertainty_policy:ask"]
 
     def test_open_questions_stripped_means_approve(self):
         """Simulates a LIVE event (open_questions absent): the same under-cap
