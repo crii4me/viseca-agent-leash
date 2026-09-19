@@ -59,7 +59,15 @@ class Ledger:
 
     def record_approved(self, event: dict) -> None:
         """Records a FINAL approval. Never call this for a step_up offer that
-        hasn't been confirmed -- see the module docstring."""
+        hasn't been confirmed -- see the module docstring.
+
+        Stores more than the rolling-window arithmetic strictly needs
+        (merchant_id, currency, cart lines) so that this ledger can also feed
+        HIGH-confidence duplicate detection: risk_signals.detect_duplicate
+        scores much higher when the prior authorization carries its cart lines,
+        and its own README recommends keeping exactly this fuller row for that
+        reason. Everything beyond billing_amount_chf/timestamp is optional and
+        read defensively, so a minimal event never breaks recording."""
         auth = event["authorization"]
         card_id = auth["card_id"]
         self._by_card.setdefault(card_id, []).append(
@@ -67,8 +75,18 @@ class Ledger:
                 "authorization_id": auth["authorization_id"],
                 "timestamp": auth["timestamp"],
                 "billing_amount_chf": auth["billing_amount_chf"],
+                "merchant_id": auth.get("merchant", {}).get("merchant_id"),
+                "currency": auth.get("currency"),
+                "items": auth.get("items", []),
+                "status": "approved",
             }
         )
+
+    def approved_rows(self, card_id: str) -> list[dict]:
+        """Every recorded approval for a card, newest-agnostic order. risk.py
+        turns these into risk_signals.PriorAuthorization objects (with cart
+        lines) for duplicate detection."""
+        return list(self._by_card.get(card_id, []))
 
     def _rows_in_window(self, card_id: str, as_of: str, period_days: int) -> list[dict]:
         as_of_dt = _parse_ts(as_of)

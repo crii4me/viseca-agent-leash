@@ -9,6 +9,7 @@ description = "Function 2 of the Viseca 'Agent on a Leash' control layer: purcha
 requires-python = ">=3.10"
 dependencies = [
     "mandate-compiler",
+    "risk-signals",
 ]
 
 [project.optional-dependencies]

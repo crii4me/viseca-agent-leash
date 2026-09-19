@@ -44,7 +44,7 @@ sys.path.insert(0, str(_HERE.parent / "decision-engine" / "src"))
 sys.path.insert(0, str(_HERE.parent / "mandate-compiler" / "src"))
 
 from build_events import DataPack  # noqa: E402
-from decision_engine import Ledger, decide  # noqa: E402
+from decision_engine import Ledger, build_familiar, decide, decide_full  # noqa: E402
 from mandate_compiler import compile_mandate  # noqa: E402
 
 
@@ -66,10 +66,28 @@ def compile_scenario_mandate(pack: DataPack, scenario_id: str) -> dict:
     return mandate
 
 
-def replay_scenario(pack: DataPack, scenario_id: str, fx_rates: dict[str, float]) -> list[dict]:
-    """Replay one scenario in replay_order, returning a row per purchase."""
+def load_familiar_by_card(data_dir: Path) -> dict[str, list]:
+    """Build each card's familiar-merchant list from authorization_history.csv,
+    if present. Returns {} when the history file isn't bundled (the trimmed
+    sample-data doesn't include it, so lookalike detection simply won't fire)."""
+    hist_path = data_dir / "authorization_history.csv"
+    if not hist_path.exists():
+        return {}
+    with open(hist_path, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    card_ids = {r.get("card_id") for r in rows if r.get("card_id")}
+    return {cid: build_familiar(rows, cid) for cid in card_ids}
+
+
+def replay_scenario(pack: DataPack, scenario_id: str, fx_rates: dict[str, float],
+                    *, use_risk: bool = False, familiar_by_card: dict | None = None) -> list[dict]:
+    """Replay one scenario in replay_order, returning a row per purchase.
+
+    `use_risk=True` runs the full Function 2 (hard rules + risk composition);
+    otherwise just the hard-rules engine, so you can diff the two."""
     mandate = compile_scenario_mandate(pack, scenario_id)
     events = pack.build_scenario_events(scenario_id, mandate=mandate)
+    familiar_by_card = familiar_by_card or {}
 
     ledger = Ledger()
     rows: list[dict] = []
@@ -89,7 +107,11 @@ def replay_scenario(pack: DataPack, scenario_id: str, fx_rates: dict[str, float]
             continue
         ledger.record_seen(auth_id)
 
-        d = decide(event, ledger=ledger, fx_rates=fx_rates)
+        if use_risk:
+            familiar = familiar_by_card.get(auth["card_id"])
+            d = decide_full(event, ledger=ledger, fx_rates=fx_rates, familiar=familiar)
+        else:
+            d = decide(event, ledger=ledger, fx_rates=fx_rates)
 
         # Only a FINAL approval goes in the ledger. A step_up does not (a human
         # hasn't confirmed it), so it can't inflate a later rolling window.
@@ -128,17 +150,22 @@ def main() -> None:
     ap.add_argument("--data-dir", default=str(_HERE / "sample-data"),
                     help="Path to the data pack (viseca-2026/data). Defaults to the bundled sample-data/.")
     ap.add_argument("--json", action="store_true", help="Emit machine-readable JSON instead of a table.")
+    ap.add_argument("--risk", action="store_true",
+                    help="Run the FULL Function 2 (hard rules + risk composition). "
+                         "Without it, only the hard-rules engine runs, so you can diff the two.")
     args = ap.parse_args()
 
     data_dir = Path(args.data_dir)
     pack = DataPack(data_dir)
     fx_rates = load_fx_rates(data_dir)
+    familiar_by_card = load_familiar_by_card(data_dir) if args.risk else {}
 
     scenario_ids = [args.scenario] if args.scenario else sorted(pack.scenario_catalogue)
 
     all_rows: dict[str, list[dict]] = {}
     for scen in scenario_ids:
-        all_rows[scen] = replay_scenario(pack, scen, fx_rates)
+        all_rows[scen] = replay_scenario(pack, scen, fx_rates, use_risk=args.risk,
+                                         familiar_by_card=familiar_by_card)
 
     if args.json:
         print(json.dumps(all_rows, indent=2))
