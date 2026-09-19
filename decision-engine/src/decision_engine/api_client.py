@@ -121,7 +121,9 @@ class LeashClient:
         (mandate_id, the confirmed mandate as GET returns it -- including
         open_questions and uncertainty_policy)."""
         compiled = compile_mandate(instruction).to_viseca_dict()
-        draft = self._request("POST", "/v1/mandates", json=to_api_mandate(compiled)).json()
+        body = to_api_mandate(compiled)
+        body["instruction"] = instruction  # the API stores the original wording; required field
+        draft = self._request("POST", "/v1/mandates", json=body).json()
         draft_id = draft.get("draft_id")
         if not draft_id:
             raise LeashApiError(f"no draft_id in /v1/mandates response: {draft}")
