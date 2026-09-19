@@ -155,6 +155,52 @@ class TestCategoryDeclineIsGated:
         assert out.decision == "approve"
 
 
+class TestReturnableIsCheckedNotLumped:
+    """A stated return term has three distinct outcomes, not one.
+
+    Added with the AU0014 fix -- NEEDS OMAR'S REVIEW. Previously every
+    fulfillment_* flag mapped to step_up, so a shop saying outright "this
+    cannot be returned" was handled identically to one that simply didn't say.
+    """
+
+    # Deliberately names no product category: the keyword stub would derive an
+    # expected_categories requirement from words like "shoes", and a category
+    # mismatch would then decide the test instead of returnability.
+    _INSTRUCTION = "Only pay if the order can be returned. Ask me when uncertain."
+
+    def test_the_requirement_is_actually_derived(self):
+        """Guards the two tests below from silently testing nothing."""
+        req = derive_requirements(_mandate(self._INSTRUCTION))
+        assert req.require_returnable is True
+        assert req.expected_categories is None
+
+    def test_returnable_false_declines(self):
+        """AU0014's shape: a direct contradiction of a term the customer set."""
+        m = _mandate(self._INSTRUCTION)
+        base = Decision("AU", "approve", ["within_policy"], "", [])
+        ev = _event(mandate=m, order_returnable="false", authorization_id="AU")
+        out = compose_decision(base, ev, ledger=Ledger())
+        assert out.decision == "decline"
+        assert any("fulfillment_mismatch" in c for c in out.reason_codes)
+
+    def test_returnable_unknown_still_asks(self):
+        """Not supplied is unverified, NOT violated -- still a step_up."""
+        m = _mandate(self._INSTRUCTION)
+        base = Decision("AU", "approve", ["within_policy"], "", [])
+        ev = _event(mandate=m, order_returnable="unknown", authorization_id="AU")
+        out = compose_decision(base, ev, ledger=Ledger())
+        assert out.decision == "step_up"
+
+    def test_returnable_false_does_not_bite_when_never_asked_for(self):
+        """Context-gating: a customer who never asked for returnable must not
+        have a purchase declined because a shop marked it non-returnable."""
+        m = _mandate("Spend up to CHF 500.")
+        base = Decision("AU", "approve", ["within_policy"], "", [])
+        ev = _event(mandate=m, order_returnable="false", authorization_id="AU")
+        out = compose_decision(base, ev, ledger=Ledger())
+        assert out.decision == "approve"
+
+
 class TestInjectionNeverDecides:
     def test_injected_text_with_clean_structured_facts_stays_approved(self):
         m = _mandate("Buy the monitor I chose for CHF 400 or less. Ask me when uncertain.")

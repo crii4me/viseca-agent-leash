@@ -1,6 +1,6 @@
 # Function 2 — Decision engine
 
-> **Status: hard-rules layer working, 29 tests green.** Owner: Omar.
+> **Status: hard rules + risk composition working, 67 tests green.** Owner: Omar.
 
 Incoming purchase event → `approve` / `decline` / `step_up`, within the
 8-second deadline.
@@ -45,10 +45,14 @@ exactly which scenario rows this affects.
 
 ```bash
 cd decision-engine
-pip install -e ../mandate-compiler        # Function 1, a sibling package
+pip install -r requirements.txt   # pulls BOTH sibling packages (mandate-compiler + risk-signals)
 pip install -e . && pip install pytest requests
-pytest                                     # 29 tests, offline, no key
+pytest                            # 67 tests, offline, no key
 ```
+
+`requirements.txt` is the single source of truth for the sibling installs —
+listing them here by hand is how the two drifted apart and left the documented
+setup failing on a missing `risk-signals`.
 
 Offline simulation over the real 45-attempt data pack lives in
 [`/demo-harness`](../demo-harness) — `python replay.py`.

@@ -248,8 +248,57 @@ class HardRule(BaseModel):
 
         return self
 
+    def describe_plain(self) -> str:
+        """Customer-facing sentence, rendered from the structured fields.
+
+        Built from {operator, value, currency, scope, period_days} with a
+        template - never by editing the customer's original sentence. Text
+        produced by cutting a matched span out of a sentence leaves the
+        connectives that pointed at it dangling ("Keep the total across"),
+        which is how garbled guidance reached the customer. A template cannot
+        produce that.
+        """
+        spec = FIELDS[self.field]
+
+        if spec.kind == "money":
+            subject = (
+                "Each purchase"
+                if self.scope is Scope.PURCHASE
+                else f"Total spending over any {self.period_days} days"
+            )
+        elif spec.kind == "count":
+            subject = (
+                "The number of items on a purchase"
+                if self.scope is Scope.PURCHASE
+                else f"The number of purchases in any {self.period_days} days"
+            )
+        else:
+            subject = self.field.rsplit(".", 1)[-1].replace("_", " ").capitalize()
+
+        phrase = {
+            Operator.LTE: "no more than",
+            Operator.LT: "less than",
+            Operator.GTE: "at least",
+            Operator.GT: "more than",
+            Operator.EQ: "exactly",
+            Operator.NEQ: "anything other than",
+            Operator.IN: "one of",
+            Operator.NOT_IN: "none of",
+        }[self.operator]
+
+        if isinstance(self.value, list):
+            value = ", ".join(str(v) for v in self.value)
+        elif self.currency and isinstance(self.value, (int, float)):
+            value = f"{self.currency} {float(self.value):.2f}"
+        elif isinstance(self.value, float):
+            value = f"{self.value:g}"
+        else:
+            value = str(self.value)
+
+        return f"{subject} must be {phrase} {value}."
+
     def describe(self) -> str:
-        """Human-readable form, for reasons[] strings and demo output."""
+        """Technical form, for reasons[] strings and debug output."""
         val = self.value
         if isinstance(val, list):
             val = "[" + ", ".join(str(x) for x in val) + "]"
@@ -274,6 +323,17 @@ class Clause(BaseModel):
     guidance: str | None = None
     question: str | None = None
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+    blocking: bool = Field(
+        default=False,
+        description=(
+            "Open questions only. True when the question must be answered before "
+            "a purchase can be evaluated at all - e.g. an amount limit whose "
+            "currency is unknown, so the rule cannot be compared. False when the "
+            "question is about context the stated limits do not depend on, such "
+            "as what 'a shop I use regularly' means: those attach as evidence "
+            "but must not force a step_up on a purchase that passes every rule."
+        ),
+    )
 
 
 class CompilerMeta(BaseModel):
@@ -308,7 +368,14 @@ class Mandate(BaseModel):
     meta: CompilerMeta | None = None
 
     def to_viseca_dict(self) -> dict:
-        """Exactly the four contract fields, JSON-ready. This is what Function 2 gets."""
+        """The contract fields, JSON-ready. This is what Function 2 gets.
+
+        `open_questions` keeps its original shape - a flat list of strings -
+        because that is what Viseca's live API returns on GET /v1/mandates/{id}.
+        `blocking_open_questions` is an additive subset of it: the questions that
+        must be answered before a purchase can be evaluated at all. A consumer
+        that does not know the field simply ignores it and behaves as before.
+        """
         return {
             "hard_rules": [
                 r.model_dump(mode="json", exclude_none=True) for r in self.hard_rules
@@ -316,7 +383,28 @@ class Mandate(BaseModel):
             "uncertainty_policy": self.uncertainty_policy.value,
             "guidance": list(self.guidance),
             "open_questions": list(self.open_questions),
+            "blocking_open_questions": list(self.blocking_open_questions),
         }
+
+    @property
+    def blocking_open_questions(self) -> list[str]:
+        """The subset of `open_questions` that must be answered before deciding.
+
+        Derived from clause provenance so the two lists cannot drift: a question
+        is blocking only if the clause that produced it said so.
+        """
+        blocking = [
+            c.question
+            for c in self.clauses
+            if c.bucket is Bucket.OPEN_QUESTION and c.blocking and c.question
+        ]
+        seen: set[str] = set()
+        out: list[str] = []
+        for q in blocking:
+            if q.casefold() not in seen:
+                seen.add(q.casefold())
+                out.append(q)
+        return out
 
     @property
     def provisional_fields_used(self) -> list[str]:
@@ -327,3 +415,12 @@ class Mandate(BaseModel):
     def guidance_text(self) -> str:
         """Guidance as a single free-text block, if a consumer wants it that way."""
         return "\n".join(self.guidance)
+
+    @property
+    def rule_summaries(self) -> list[str]:
+        """Plain-English rendering of every hard rule, for a customer or a demo.
+
+        Template-rendered from the structured rules, so it cannot inherit the
+        garbling that comes from editing the original sentence.
+        """
+        return [r.describe_plain() for r in self.hard_rules]

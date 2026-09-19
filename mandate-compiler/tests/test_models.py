@@ -118,7 +118,8 @@ def test_schema_is_well_formed():
     schema = mandate_json_schema()
     assert schema["title"] == "VisecaMandate"
     assert set(schema["properties"]) == {
-        "hard_rules", "uncertainty_policy", "guidance", "open_questions"
+        "hard_rules", "uncertainty_policy", "guidance", "open_questions",
+        "blocking_open_questions",
     }
 
 

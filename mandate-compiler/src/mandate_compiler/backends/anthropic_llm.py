@@ -238,6 +238,10 @@ class AnthropicBackend:
                         f"restate it as an amount, a count, or a merchant category?"
                     ),
                     confidence=0.5,
+                    # Blocking: the customer stated a limit we cannot enforce.
+                    # Approving purchases against an unenforceable limit would
+                    # silently drop a constraint they asked for.
+                    blocking=True,
                 )
             )
 
