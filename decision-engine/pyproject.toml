@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "decision-engine"
+version = "0.1.0"
+description = "Function 2 of the Viseca 'Agent on a Leash' control layer: purchase event -> approve/decline/step_up, in <8s."
+requires-python = ">=3.10"
+dependencies = [
+    "mandate-compiler",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
