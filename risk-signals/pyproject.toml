@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "risk-signals"
+version = "0.1.0"
+description = "Decision-neutral risk evidence (duplicates, lookalikes, velocity, fulfilment, injected text) for the Viseca 'Agent on a Leash' control layer."
+requires-python = ">=3.10"
+# No runtime dependencies, on purpose: this module is meant to be copied into
+# Function 2 without dragging anything along. Levenshtein and Jaccard are
+# implemented here rather than imported.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

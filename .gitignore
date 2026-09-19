@@ -49,6 +49,12 @@ pnpm-debug.log*
 Thumbs.db
 desktop.ini
 
+# --- Upstream data pack ----------------------------------------------------
+# github.com/START-Hack/viseca-2026, cloned locally for fixtures. Not ours to
+# vendor into this repo. Get it with:
+#   git clone --depth 1 https://github.com/START-Hack/viseca-2026.git vendor/viseca-2026
+vendor/
+
 # --- Local scratch ---------------------------------------------------------
 *.log
 .claude/

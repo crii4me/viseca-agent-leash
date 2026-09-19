@@ -37,6 +37,7 @@ enforcing them, so they're different services.
 | [`/mandate-compiler`](mandate-compiler) | **Function 1.** Instruction text → structured mandate | [@crii4me](https://github.com/crii4me) | ✅ Working, 88 tests green |
 | [`/decision-engine`](decision-engine) | **Function 2.** Purchase event → decision, in <8s | _TBD_ | 🔲 Stub |
 | [`/demo-harness`](demo-harness) | Offline replay harness + the demo we show judges | _TBD_ | 🔲 Stub |
+| [`/risk-signals`](risk-signals) | Duplicate / lookalike / velocity **evidence** for Function 2 to consume | [@crii4me](https://github.com/crii4me) | ✅ Working, 51 tests green |
 | [`/contracts`](contracts) | **The interface between 1 and 2.** Read this first | shared | ✅ Published |
 
 Each folder's README is a real briefing, not a placeholder — start with yours.
