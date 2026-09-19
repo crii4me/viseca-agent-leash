@@ -1,11 +1,57 @@
+/* ---------------------------------------------------------------------------
+   Viseca brand tokens - the single source of colour for the whole frontend.
+   Sampled from viseca.ch's rendered page, not guessed.
+
+   Nothing below this block should contain a raw hex value; everything in
+   App.css refers to these. To retune the palette later, edit only this block.
+   --------------------------------------------------------------------------- */
+:root {
+  /* Core brand palette */
+  --viseca-orange:  #F69F29;  /* primary CTAs, accents */
+  --viseca-blue:    #74A0CA;  /* links, secondary accent */
+  --viseca-gray:    #4C4C4C;  /* default body text */
+  --viseca-white:   #FFFFFF;  /* primary background */
+  --viseca-cream:   #FAF5EF;  /* accent section background */
+  --viseca-neutral: #F3F3F3;  /* subtle panel background */
+  --viseca-ink:     #1A1A1A;  /* headings and wordmark, near-black */
+
+  /* Darkened variants for TEXT only.
+     Brand orange on white is ~2.0:1 and soft blue ~2.5:1 - both fail WCAG AA
+     at body size. They stay as fills, borders and accents; anything set as
+     small text uses these instead, which clear 4.5:1. */
+  --orange-text: #8A5A0F;
+  --blue-text:   #3D6A94;
+
+  /* Decision states. Orange does double duty for step-up: it is already the
+     site's own attention colour, so it reads as "look here" on-brand. */
+  --state-approve: #3F7A5C;
+  --state-step-up: var(--viseca-orange);
+  --state-decline: #B0432E;
+
+  --state-approve-fill: rgba(63, 122, 92, 0.10);
+  --state-step-up-fill: rgba(246, 159, 41, 0.15);
+  --state-decline-fill: rgba(176, 67, 46, 0.10);
+  --state-approve-text: #2F5B45;
+  --state-step-up-text: var(--orange-text);
+  --state-decline-text: #8E3524;
+
+  /* Surfaces, borders, text. Derived so a palette tweak flows through. */
+  --page-bg:     var(--viseca-cream);
+  --panel-bg:    var(--viseca-white);
+  --sunken-bg:   var(--viseca-neutral);
+  --border:      #E7E1D9;
+  --border-soft: #F0EBE4;
+  --text:        var(--viseca-gray);
+  --text-muted:  #8C8C8C;
+  --heading:     var(--viseca-ink);
+}
+
 :root {
   font-family: Inter, 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #edf2ff;
-  background:
-    radial-gradient(circle at top, rgba(59, 130, 246, 0.2), transparent 28%),
-    linear-gradient(135deg, #020817 0%, #0f172a 35%, #111827 100%);
+  color: var(--text);
+  background: var(--page-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
