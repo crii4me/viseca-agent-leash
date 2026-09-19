@@ -74,8 +74,14 @@ function App() {
   // in flight, the answer arrives for a purchase that has already gone, and the
   // audience sees nothing. Escape clears the result and the carousel resumes.
   const paused = draftInstruction !== null || liveResult !== null || pendingLive
+  // Mirrored into a ref so the interval below reads the current value without
+  // being torn down and recreated on every pause change. Written in an effect,
+  // not during render: a ref write during render is a side effect, and under
+  // StrictMode's double render it is the kind of thing that silently goes stale.
   const pausedRef = useRef(paused)
-  pausedRef.current = paused
+  useEffect(() => {
+    pausedRef.current = paused
+  }, [paused])
 
   const { scenario, purchase } = QUEUE[queueIndex]
 
